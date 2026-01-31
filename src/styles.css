@@ -1,0 +1,229 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+#game-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+#game-container canvas {
+  pointer-events: auto;
+}
+
+/* Avatar container */
+#avatar-container {
+  position: fixed;
+  pointer-events: auto;
+}
+
+/* Cute isometric avatar */
+.avatar {
+  width: 80px;
+  height: 100px;
+  position: relative;
+  cursor: grab;
+  transition: transform 0.1s ease;
+}
+
+.avatar:active {
+  cursor: grabbing;
+  transform: scale(1.1);
+}
+
+/* Avatar body (isometric cube style) */
+.avatar::before {
+  content: '';
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, #FFB7C5 0%, #FF8FAB 50%, #FF6B8A 100%);
+  border-radius: 20px;
+  transform: rotateX(15deg) rotateY(-15deg);
+  box-shadow: 
+    0 10px 30px rgba(255, 107, 138, 0.4),
+    inset 0 -5px 15px rgba(255, 255, 255, 0.3),
+    inset 0 5px 15px rgba(255, 255, 255, 0.5);
+  left: 10px;
+  top: 10px;
+}
+
+/* Avatar face */
+.avatar::after {
+  content: '◕‿◕';
+  position: absolute;
+  font-size: 24px;
+  left: 18px;
+  top: 25px;
+  color: #333;
+  text-shadow: none;
+}
+
+/* Speech bubble */
+.speech-bubble {
+  position: fixed;
+  max-width: 250px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border-radius: 20px;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.15),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  font-family: 'Segoe UI', 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px;
+  color: #333;
+  z-index: 1000;
+  pointer-events: auto;
+  animation: bubbleAppear 0.3s ease-out;
+  transform-origin: bottom center;
+}
+
+.speech-bubble.hidden {
+  display: none;
+}
+
+.bubble-content {
+  position: relative;
+}
+
+#bubble-text {
+  display: block;
+  line-height: 1.5;
+}
+
+/* Speech bubble tail */
+.bubble-tail {
+  position: absolute;
+  bottom: -10px;
+  left: 30px;
+  width: 0;
+  height: 0;
+  border-left: 12px solid transparent;
+  border-right: 12px solid transparent;
+  border-top: 12px solid #ffffff;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+/* Thinking bubble style */
+.speech-bubble.thinking {
+  background: linear-gradient(135deg, #e8f4fd 0%, #d1e9fc 100%);
+}
+
+.speech-bubble.thinking .bubble-tail {
+  border-top-color: #e8f4fd;
+}
+
+/* Excited bubble style */
+.speech-bubble.excited {
+  background: linear-gradient(135deg, #fff3cd 0%, #ffe69c 100%);
+  animation: bubbleAppear 0.3s ease-out, bubbleBounce 0.5s ease-in-out infinite;
+}
+
+/* Animations */
+@keyframes bubbleAppear {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes bubbleBounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(2deg);
+  }
+}
+
+@keyframes walk {
+  0%, 100% {
+    transform: translateY(0) scaleY(1);
+  }
+  25% {
+    transform: translateY(-5px) scaleY(0.95);
+  }
+  50% {
+    transform: translateY(0) scaleY(1);
+  }
+  75% {
+    transform: translateY(-3px) scaleY(0.98);
+  }
+}
+
+/* Idle animation */
+.avatar.idle {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Walking animation */
+.avatar.walking {
+  animation: walk 0.4s ease-in-out infinite;
+}
+
+/* Sleeping animation */
+.avatar.sleeping::after {
+  content: '−‿−';
+}
+
+.avatar.sleeping {
+  animation: none;
+  transform: rotate(-10deg);
+}
+
+/* Excited animation */
+.avatar.excited {
+  animation: bubbleBounce 0.3s ease-in-out infinite;
+}
+
+.avatar.excited::after {
+  content: '★‿★';
+}
+
+/* Particle effects */
+.particle {
+  position: fixed;
+  pointer-events: none;
+  font-size: 16px;
+  animation: particleFade 1s ease-out forwards;
+}
+
+@keyframes particleFade {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-50px) scale(0.5);
+  }
+}

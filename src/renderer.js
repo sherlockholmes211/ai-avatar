@@ -1,0 +1,312 @@
+const { ipcRenderer } = require('electron');
+
+// Avatar state
+const state = {
+    x: window.innerWidth / 2,
+    y: window.innerHeight / 2,
+    targetX: window.innerWidth / 2,
+    targetY: window.innerHeight / 2,
+    isMoving: false,
+    isDragging: false,
+    emotion: 'idle',
+    speed: 3,
+    direction: 'right'
+};
+
+// DOM Elements
+const avatarContainer = document.getElementById('avatar-container');
+const avatar = document.getElementById('avatar');
+const speechBubble = document.getElementById('speech-bubble');
+const bubbleText = document.getElementById('bubble-text');
+
+// Initialize avatar position
+function initAvatar() {
+    avatarContainer.style.left = `${state.x}px`;
+    avatarContainer.style.top = `${state.y}px`;
+    avatar.classList.add('idle');
+
+    // Show welcome message after a short delay
+    setTimeout(() => {
+        showSpeechBubble("Hi! I'm your AI buddy! 🌟\nClick anywhere and I'll come to you!", 'excited');
+    }, 1000);
+}
+
+// Update avatar position
+function updateAvatarPosition() {
+    avatarContainer.style.left = `${state.x}px`;
+    avatarContainer.style.top = `${state.y}px`;
+
+    // Update speech bubble position
+    updateSpeechBubblePosition();
+}
+
+// Move avatar towards target
+function moveTowardsTarget() {
+    if (state.isDragging) return;
+
+    const dx = state.targetX - state.x;
+    const dy = state.targetY - state.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance > 5) {
+        state.isMoving = true;
+        avatar.classList.remove('idle');
+        avatar.classList.add('walking');
+
+        // Normalize and apply speed
+        const vx = (dx / distance) * state.speed;
+        const vy = (dy / distance) * state.speed;
+
+        state.x += vx;
+        state.y += vy;
+
+        // Flip avatar based on direction
+        if (vx > 0 && state.direction !== 'right') {
+            state.direction = 'right';
+            avatar.style.transform = 'scaleX(1)';
+        } else if (vx < 0 && state.direction !== 'left') {
+            state.direction = 'left';
+            avatar.style.transform = 'scaleX(-1)';
+        }
+
+        updateAvatarPosition();
+    } else {
+        if (state.isMoving) {
+            state.isMoving = false;
+            avatar.classList.remove('walking');
+            avatar.classList.add('idle');
+
+            // Random message when arriving
+            const messages = [
+                "I made it! ✨",
+                "Here I am! 😊",
+                "What's up? 💫",
+                "Did you call me? 🌸"
+            ];
+            const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+            showSpeechBubble(randomMessage, 'normal');
+        }
+    }
+}
+
+// Show speech bubble
+function showSpeechBubble(text, mood = 'normal', duration = 4000) {
+    // Remove old classes
+    speechBubble.classList.remove('hidden', 'thinking', 'excited');
+
+    // Add mood class
+    if (mood === 'thinking') {
+        speechBubble.classList.add('thinking');
+    } else if (mood === 'excited') {
+        speechBubble.classList.add('excited');
+    }
+
+    // Typewriter effect
+    typewriterEffect(text);
+
+    updateSpeechBubblePosition();
+
+    // Auto-hide after duration
+    if (duration > 0) {
+        setTimeout(() => {
+            speechBubble.classList.add('hidden');
+        }, duration);
+    }
+}
+
+// Typewriter effect for speech bubble
+function typewriterEffect(text) {
+    let i = 0;
+    bubbleText.textContent = '';
+
+    function type() {
+        if (i < text.length) {
+            bubbleText.textContent += text.charAt(i);
+            i++;
+            setTimeout(type, 30);
+        }
+    }
+
+    type();
+}
+
+// Update speech bubble position relative to avatar
+function updateSpeechBubblePosition() {
+    const bubbleWidth = speechBubble.offsetWidth || 200;
+    const avatarWidth = avatarContainer.offsetWidth || 80;
+
+    // Position above and centered on avatar
+    let bubbleX = state.x + (avatarWidth / 2) - (bubbleWidth / 2);
+    let bubbleY = state.y - speechBubble.offsetHeight - 20;
+
+    // Keep within screen bounds
+    bubbleX = Math.max(10, Math.min(window.innerWidth - bubbleWidth - 10, bubbleX));
+    bubbleY = Math.max(10, bubbleY);
+
+    speechBubble.style.left = `${bubbleX}px`;
+    speechBubble.style.top = `${bubbleY}px`;
+}
+
+// Handle click to move avatar
+document.addEventListener('click', (e) => {
+    // Don't respond to clicks on avatar or speech bubble
+    if (e.target.closest('#avatar-container') || e.target.closest('#speech-bubble')) {
+        return;
+    }
+
+    // Set new target
+    state.targetX = e.clientX - 40; // Center avatar on click
+    state.targetY = e.clientY - 50;
+
+    // Keep within bounds
+    state.targetX = Math.max(0, Math.min(window.innerWidth - 80, state.targetX));
+    state.targetY = Math.max(0, Math.min(window.innerHeight - 100, state.targetY));
+
+    // Create particle effect at click
+    createParticle(e.clientX, e.clientY, '✨');
+});
+
+// Drag functionality
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+
+avatarContainer.addEventListener('mousedown', (e) => {
+    state.isDragging = true;
+    dragOffsetX = e.clientX - state.x;
+    dragOffsetY = e.clientY - state.y;
+
+    avatar.classList.remove('idle', 'walking');
+    avatar.classList.add('excited');
+
+    // Enable mouse events during drag
+    ipcRenderer.send('set-ignore-mouse-events', false);
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (state.isDragging) {
+        state.x = e.clientX - dragOffsetX;
+        state.y = e.clientY - dragOffsetY;
+        state.targetX = state.x;
+        state.targetY = state.y;
+
+        // Keep within bounds
+        state.x = Math.max(0, Math.min(window.innerWidth - 80, state.x));
+        state.y = Math.max(0, Math.min(window.innerHeight - 100, state.y));
+
+        updateAvatarPosition();
+    }
+});
+
+document.addEventListener('mouseup', () => {
+    if (state.isDragging) {
+        state.isDragging = false;
+        avatar.classList.remove('excited');
+        avatar.classList.add('idle');
+
+        showSpeechBubble("Wheee! That was fun! 🎉", 'excited');
+        createParticle(state.x + 40, state.y, '💫');
+        createParticle(state.x + 50, state.y + 20, '⭐');
+        createParticle(state.x + 30, state.y + 10, '✨');
+    }
+});
+
+// Create particle effect
+function createParticle(x, y, emoji) {
+    const particle = document.createElement('div');
+    particle.className = 'particle';
+    particle.textContent = emoji;
+    particle.style.left = `${x}px`;
+    particle.style.top = `${y}px`;
+    document.body.appendChild(particle);
+
+    setTimeout(() => particle.remove(), 1000);
+}
+
+// Random idle behaviors
+function randomIdleBehavior() {
+    if (state.isMoving || state.isDragging) return;
+
+    const behaviors = [
+        () => {
+            // Look around
+            const thoughts = [
+                "Hmm... 🤔",
+                "What should I do? 💭",
+                "I wonder... ✨",
+                "Nice day! 🌈"
+            ];
+            showSpeechBubble(thoughts[Math.floor(Math.random() * thoughts.length)], 'thinking', 3000);
+        },
+        () => {
+            // Small random move
+            const offsetX = (Math.random() - 0.5) * 100;
+            const offsetY = (Math.random() - 0.5) * 100;
+            state.targetX = Math.max(0, Math.min(window.innerWidth - 80, state.x + offsetX));
+            state.targetY = Math.max(0, Math.min(window.innerHeight - 100, state.y + offsetY));
+        },
+        () => {
+            // Just sparkle
+            createParticle(state.x + 40, state.y, '✨');
+        }
+    ];
+
+    const randomBehavior = behaviors[Math.floor(Math.random() * behaviors.length)];
+    randomBehavior();
+}
+
+// Double-click for special interaction
+avatarContainer.addEventListener('dblclick', () => {
+    avatar.classList.remove('idle', 'walking');
+    avatar.classList.add('excited');
+
+    const greetings = [
+        "You double-clicked me! 🎊",
+        "Happy to see you! 💕",
+        "Let's be friends! 🤝",
+        "I love hanging out here! 🌟"
+    ];
+
+    showSpeechBubble(greetings[Math.floor(Math.random() * greetings.length)], 'excited', 4000);
+
+    // Party particles
+    for (let i = 0; i < 5; i++) {
+        setTimeout(() => {
+            const emojis = ['💖', '⭐', '🌟', '✨', '💫'];
+            createParticle(
+                state.x + 40 + (Math.random() - 0.5) * 60,
+                state.y + (Math.random() - 0.5) * 40,
+                emojis[i % emojis.length]
+            );
+        }, i * 100);
+    }
+
+    setTimeout(() => {
+        avatar.classList.remove('excited');
+        avatar.classList.add('idle');
+    }, 2000);
+});
+
+// Animation loop
+function gameLoop() {
+    moveTowardsTarget();
+    requestAnimationFrame(gameLoop);
+}
+
+// Start periodic idle behaviors
+setInterval(randomIdleBehavior, 8000);
+
+// Initialize
+initAvatar();
+gameLoop();
+
+// Handle window resize
+window.addEventListener('resize', () => {
+    // Keep avatar within new bounds
+    state.x = Math.min(state.x, window.innerWidth - 80);
+    state.y = Math.min(state.y, window.innerHeight - 100);
+    state.targetX = state.x;
+    state.targetY = state.y;
+    updateAvatarPosition();
+});
+
+console.log('🌟 AI Avatar initialized!');
