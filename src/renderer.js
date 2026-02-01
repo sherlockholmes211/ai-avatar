@@ -73,7 +73,7 @@ function updateAvatarPosition() {
     updateSpeechBubblePosition();
 }
 
-// Move avatar towards target
+// // Move avatar towards target
 function moveTowardsTarget() {
     if (state.isDragging) return;
 
@@ -193,7 +193,7 @@ avatarContainer.addEventListener('mousedown', (e) => {
     avatar.classList.add('excited');
 
     // Enable mouse events during drag
-    ipcRenderer.send('set-ignore-mouse-events', false);
+    enableClickCapture();
 });
 
 document.addEventListener('mousemove', (e) => {
