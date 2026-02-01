@@ -40,6 +40,53 @@ function createWindow() {
         }
     });
 
+    // CONTEXT MENU FOR CUSTOMIZATION
+    ipcMain.on('show-avatar-menu', (event) => {
+        const { Menu, MenuItem } = require('electron');
+        const menu = new Menu();
+
+        // Themes Submenu
+        menu.append(new MenuItem({
+            label: 'Themes',
+            submenu: [
+                { label: 'Original Pink', click: () => event.sender.send('change-theme', 'pink') },
+                { label: 'Cool Blue', click: () => event.sender.send('change-theme', 'blue') },
+                { label: 'Deep Purple', click: () => event.sender.send('change-theme', 'purple') },
+                { label: 'Neon Green', click: () => event.sender.send('change-theme', 'green') },
+                { label: 'Sunlight Yellow', click: () => event.sender.send('change-theme', 'yellow') }
+            ]
+        }));
+
+        // Faces Submenu
+        menu.append(new MenuItem({
+            label: 'Expressions',
+            submenu: [
+                { label: 'Happy (◕‿◕)', click: () => event.sender.send('change-face', '◕‿◕') },
+                { label: 'Dot (●‿●)', click: () => event.sender.send('change-face', '●‿●') },
+                { label: 'Kawaii (◡‿◡✿)', click: () => event.sender.send('change-face', '◡‿◡✿') },
+                { label: 'Star (★‿★)', click: () => event.sender.send('change-face', '★‿★') },
+                { label: 'Zen (−‿−)', click: () => event.sender.send('change-face', '−‿−') }
+            ]
+        }));
+
+        // Size Submenu
+        menu.append(new MenuItem({
+            label: 'Size',
+            submenu: [
+                { label: 'Tiny', click: () => event.sender.send('change-size', 0.6) },
+                { label: 'Small', click: () => event.sender.send('change-size', 0.8) },
+                { label: 'Standard', click: () => event.sender.send('change-size', 1.0) },
+                { label: 'Large', click: () => event.sender.send('change-size', 1.25) },
+                { label: 'Giant', click: () => event.sender.send('change-size', 1.5) }
+            ]
+        }));
+
+        menu.append(new MenuItem({ type: 'separator' }));
+        menu.append(new MenuItem({ label: 'Quit', click: () => app.quit() }));
+
+        menu.popup(BrowserWindow.fromWebContents(event.sender));
+    });
+
     // Set window level (macOS specific)
     if (process.platform === 'darwin') {
         mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });

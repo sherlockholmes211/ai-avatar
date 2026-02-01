@@ -1,10 +1,19 @@
+:root {
+  --avatar-size: 1;
+  --avatar-primary: #FFB7C5;
+  --avatar-secondary: #FF8FAB;
+  --avatar-accent: #FF6B8A;
+  --avatar-shadow: rgba(255, 107, 138, 0.4);
+}
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -31,6 +40,9 @@ html, body {
 #avatar-container {
   position: fixed;
   pointer-events: auto;
+  transform: scale(var(--avatar-size));
+  transform-origin: center center;
+  transition: transform 0.3s ease;
 }
 
 /* Cute isometric avatar */
@@ -53,11 +65,11 @@ html, body {
   position: absolute;
   width: 60px;
   height: 60px;
-  background: linear-gradient(135deg, #FFB7C5 0%, #FF8FAB 50%, #FF6B8A 100%);
+  background: linear-gradient(135deg, var(--avatar-primary) 0%, var(--avatar-secondary) 50%, var(--avatar-accent) 100%);
   border-radius: 20px;
   transform: rotateX(15deg) rotateY(-15deg);
-  box-shadow: 
-    0 10px 30px rgba(255, 107, 138, 0.4),
+  box-shadow:
+    0 10px 30px var(--avatar-shadow),
     inset 0 -5px 15px rgba(255, 255, 255, 0.3),
     inset 0 5px 15px rgba(255, 255, 255, 0.5);
   left: 10px;
@@ -82,7 +94,7 @@ html, body {
   padding: 12px 16px;
   background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
   border-radius: 20px;
-  box-shadow: 
+  box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.15),
     0 2px 8px rgba(0, 0, 0, 0.1);
   font-family: 'Segoe UI', 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -141,6 +153,7 @@ html, body {
     opacity: 0;
     transform: scale(0.8) translateY(10px);
   }
+
   100% {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -148,33 +161,44 @@ html, body {
 }
 
 @keyframes bubbleBounce {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0);
   }
+
   50% {
     transform: translateY(-5px);
   }
 }
 
 @keyframes float {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0) rotate(-2deg);
   }
+
   50% {
     transform: translateY(-8px) rotate(2deg);
   }
 }
 
 @keyframes walk {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0) scaleY(1);
   }
+
   25% {
     transform: translateY(-5px) scaleY(0.95);
   }
+
   50% {
     transform: translateY(0) scaleY(1);
   }
+
   75% {
     transform: translateY(-3px) scaleY(0.98);
   }
@@ -222,6 +246,7 @@ html, body {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+
   100% {
     opacity: 0;
     transform: translateY(-50px) scale(0.5);

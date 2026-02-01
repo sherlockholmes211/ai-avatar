@@ -180,25 +180,6 @@ function updateSpeechBubblePosition() {
     speechBubble.style.top = `${bubbleY}px`;
 }
 
-// Handle click to move avatar
-document.addEventListener('click', (e) => {
-    // Don't respond to clicks on avatar or speech bubble
-    if (e.target.closest('#avatar-container') || e.target.closest('#speech-bubble')) {
-        return;
-    }
-
-    // Set new target
-    state.targetX = e.clientX - 40; // Center avatar on click
-    state.targetY = e.clientY - 50;
-
-    // Keep within bounds
-    state.targetX = Math.max(0, Math.min(window.innerWidth - 80, state.targetX));
-    state.targetY = Math.max(0, Math.min(window.innerHeight - 100, state.targetY));
-
-    // Create particle effect at click
-    createParticle(e.clientX, e.clientY, '✨');
-});
-
 // Drag functionality
 let dragOffsetX = 0;
 let dragOffsetY = 0;
@@ -331,8 +312,114 @@ function gameLoop() {
 // Start periodic idle behaviors
 setInterval(randomIdleBehavior, 8000);
 
+// ==========================================
+// CUSTOMIZATION SYSTEM
+// ==========================================
+
+const themes = {
+    pink: {
+        primary: '#FFB7C5',
+        secondary: '#FF8FAB',
+        accent: '#FF6B8A',
+        shadow: 'rgba(255, 107, 138, 0.4)'
+    },
+    blue: {
+        primary: '#A2D2FF',
+        secondary: '#BDE0FE',
+        accent: '#219EBC',
+        shadow: 'rgba(33, 158, 188, 0.4)'
+    },
+    purple: {
+        primary: '#CDB4DB',
+        secondary: '#AFADDE',
+        accent: '#7400B8',
+        shadow: 'rgba(116, 0, 184, 0.4)'
+    },
+    green: {
+        primary: '#D8F3DC',
+        secondary: '#95D5B2',
+        accent: '#2D6A4F',
+        shadow: 'rgba(45, 106, 79, 0.4)'
+    },
+    yellow: {
+        primary: '#FDFFB6',
+        secondary: '#FFD60A',
+        accent: '#FFB703',
+        shadow: 'rgba(255, 183, 3, 0.4)'
+    }
+};
+
+// Apply saved preferences or defaults
+function applyPreferences() {
+    const saved = JSON.parse(localStorage.getItem('avatar-prefs') || '{}');
+    if (saved.theme) setTheme(saved.theme, false);
+    if (saved.face) setFace(saved.face, false);
+    if (saved.size) setSize(saved.size, false);
+}
+
+function setTheme(themeName, shouldSave = true) {
+    const theme = themes[themeName] || themes.pink;
+    const root = document.documentElement;
+    root.style.setProperty('--avatar-primary', theme.primary);
+    root.style.setProperty('--avatar-secondary', theme.secondary);
+    root.style.setProperty('--avatar-accent', theme.accent);
+    root.style.setProperty('--avatar-shadow', theme.shadow);
+
+    if (shouldSave) {
+        savePreference('theme', themeName);
+        showSpeechBubble(`Theme changed to ${themeName}! ✨`, 'excited');
+    }
+}
+
+function setFace(face, shouldSave = true) {
+    // We update the CSS content via the style property on a dummy element if needed, 
+    // but here it's cleaner to just update a CSS variable if we had one for content,
+    // or better, just target the ::after via a class or just change the property directly 
+    // if it wasn't a pseudo-element. 
+    // Since it IS a pseudo-element, we'll add a style tag to override it.
+    let styleTag = document.getElementById('avatar-face-style');
+    if (!styleTag) {
+        styleTag = document.createElement('style');
+        styleTag.id = 'avatar-face-style';
+        document.head.appendChild(styleTag);
+    }
+    styleTag.innerHTML = `.avatar::after { content: '${face}'; }`;
+
+    if (shouldSave) {
+        savePreference('face', face);
+        showSpeechBubble(`Do you like my new face? ${face}`, 'excited');
+    }
+}
+
+function setSize(size, shouldSave = true) {
+    document.documentElement.style.setProperty('--avatar-size', size);
+    if (shouldSave) {
+        savePreference('size', size);
+        showSpeechBubble("How's this for size? 📏", 'normal');
+    }
+}
+
+function savePreference(key, value) {
+    const prefs = JSON.parse(localStorage.getItem('avatar-prefs') || '{}');
+    prefs[key] = value;
+    localStorage.setItem('avatar-prefs', JSON.stringify(prefs));
+}
+
+// Right-click for customization menu
+avatarContainer.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    ipcRenderer.send('show-avatar-menu');
+});
+
+// IPC Listeners for menu actions
+ipcRenderer.on('change-theme', (event, theme) => setTheme(theme));
+ipcRenderer.on('change-face', (event, face) => setFace(face));
+ipcRenderer.on('change-size', (event, size) => setSize(size));
+
+
 // Initialize
 initAvatar();
+applyPreferences();
 gameLoop();
 
 // Handle window resize
