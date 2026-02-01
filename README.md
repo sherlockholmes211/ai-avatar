@@ -13,12 +13,14 @@ A cute, interactive AI avatar that lives on your desktop! Built with Electron an
 | Feature | Description |
 |---------|-------------|
 | 🪟 Transparent Window | Avatar floats above your desktop |
-| 🏃 Click to Move | Click anywhere, avatar walks there |
+| 🖱️ Smart Click-Through | Clicks pass through to desktop except over the avatar |
 | ✋ Drag & Drop | Grab and move the avatar freely |
+| 🎨 Customization | Right-click to change theme, face, and size |
 | 💬 Speech Bubbles | Typewriter effect with auto-positioning |
 | ✨ Particle Effects | Sparkles and emojis on interactions |
 | 😴 Idle Behaviors | Random thoughts and movements |
 | 🎉 Double-click | Special party reaction! |
+| 💾 Persistence | Settings are saved between restarts |
 
 ---
 
@@ -56,18 +58,18 @@ ai-avatar/
 ├─────────────────────────────────────────────────────────────┤
 │  Main Process (main.js)                                     │
 │  ├── Window Management (transparent, frameless)             │
-│  ├── IPC Communication                                      │
+│  ├── IPC Communication & Context Menu                       │
 │  └── System Integration (always-on-top, workspaces)         │
 ├─────────────────────────────────────────────────────────────┤
 │  Renderer Process (renderer.js)                             │
-│  ├── Avatar State Machine                                   │
+│  ├── Smart Click-Through Logic                              │
+│  ├── Avatar State Machine & Customization                   │
 │  ├── Movement System                                        │
 │  ├── Speech Bubble Controller                               │
-│  ├── Particle System                                        │
 │  └── Event Handlers                                         │
 ├─────────────────────────────────────────────────────────────┤
 │  UI Layer (index.html + styles.css)                         │
-│  ├── Avatar Container & Styling                             │
+│  ├── Avatar Container (CSS Variables)                       │
 │  ├── Speech Bubble Components                               │
 │  └── CSS Animations                                         │
 └─────────────────────────────────────────────────────────────┘
@@ -89,15 +91,16 @@ new BrowserWindow({
   frame: false,           // No title bar
   alwaysOnTop: true,      // Always visible
   hasShadow: false,       // No shadow
-  skipTaskbar: true       // Hidden from taskbar
+  skipTaskbar: true,      // Hidden from taskbar
+  focusable: false        // Don't steal focus from other apps
 });
 ```
 
 **Features:**
-- Creates a fullscreen transparent overlay
-- Handles IPC for mouse event forwarding
-- macOS-specific: visible on all workspaces
-- Responds to display size changes
+- Creates a fullscreen transparent overlay.
+- Handles IPC for dynamic click-through toggling.
+- Manages the **Right-click Context Menu** for customization.
+- macOS-specific: visible on all workspaces.
 
 ---
 
@@ -105,61 +108,34 @@ new BrowserWindow({
 
 The renderer manages all avatar behavior and interactions.
 
-#### State Management
+#### Smart Click-Through
 
-```javascript
-const state = {
-  x, y,              // Current position
-  targetX, targetY,  // Movement destination
-  isMoving,          // Animation state
-  isDragging,        // Drag state
-  emotion,           // Current mood
-  speed,             // Movement speed
-  direction          // Facing direction
-};
-```
+The app uses a dynamic click-through system:
+- **Default**: The entire window ignores mouse events, letting you interact with apps behind the avatar.
+- **Hover**: When the mouse enters the avatar or speech bubble area, the window captures mouse events for dragging or clicking.
 
 #### Core Functions
 
 | Function | Description |
 |----------|-------------|
-| `initAvatar()` | Initialize position and show welcome message |
-| `moveTowardsTarget()` | Smooth movement towards click position |
-| `showSpeechBubble(text, mood, duration)` | Display speech with typewriter effect |
-| `typewriterEffect(text)` | Character-by-character text animation |
-| `createParticle(x, y, emoji)` | Spawn floating emoji particle |
-| `randomIdleBehavior()` | Trigger random thoughts/movements |
-
-#### Event Flow
-
-```
-User Click → Calculate Target → Start Walking Animation
-    ↓
-Movement Loop (requestAnimationFrame)
-    ↓
-Arrive at Target → Switch to Idle → Show Message
-```
+| `enableClickThrough()` | Makes the window transparent to clicks |
+| `enableClickCapture()` | Makes the window capture clicks (over avatar) |
+| `setTheme(themeName)` | Updates avatar colors via CSS variables |
+| `setFace(face)` | Updates the avatar's face expression |
+| `setSize(size)` | Scales the avatar up or down |
+| `showSpeechBubble()` | Display speech with typewriter effect |
 
 ---
 
 ### `styles.css` - Visual Design
 
-#### Avatar Styling
+#### CSS Variables
 
-The avatar uses CSS pseudo-elements for a cute isometric look:
-
-```css
-.avatar::before {
-  /* Body - gradient pink cube */
-  background: linear-gradient(135deg, #FFB7C5, #FF6B8A);
-  transform: rotateX(15deg) rotateY(-15deg);
-}
-
-.avatar::after {
-  /* Face - cute emoji */
-  content: '◕‿◕';
-}
-```
+The app uses variables for easy customization:
+- `--avatar-size`: Scaling factor
+- `--avatar-primary`: Primary body color
+- `--avatar-secondary`: Gradient secondary color
+- `--avatar-accent`: Gradient accent color
 
 #### Animation States
 
@@ -170,14 +146,6 @@ The avatar uses CSS pseudo-elements for a cute isometric look:
 | `.sleeping` | Tilted with closed eyes |
 | `.excited` | Rapid bouncing with star eyes |
 
-#### Speech Bubble Variants
-
-| Class | Style |
-|-------|-------|
-| `.speech-bubble` | Default white gradient |
-| `.thinking` | Blue gradient |
-| `.excited` | Yellow gradient + bounce |
-
 ---
 
 ## 🎮 Usage Guide
@@ -186,73 +154,21 @@ The avatar uses CSS pseudo-elements for a cute isometric look:
 
 | Action | Result |
 |--------|--------|
-| **Click** anywhere | Avatar walks to that spot |
+| **Right-Click** avatar | Open customization menu |
 | **Drag** the avatar | Move it freely |
 | **Double-click** avatar | Party mode with particles! |
 | **Wait** 8+ seconds | Random idle behavior |
 
-### Avatar Emotions
+### 🎨 Customization Options
 
-The avatar has multiple emotional states:
-
-- **Idle** ◕‿◕ - Default happy state, gentle floating
-- **Walking** ◕‿◕ - Moving to destination
-- **Excited** ★‿★ - After interactions
-- **Sleeping** −‿− - When resting (future feature)
-
----
-
-## 🔧 Customization
-
-### Change Avatar Appearance
-
-Edit `styles.css`:
-
-```css
-/* Change colors */
-.avatar::before {
-  background: linear-gradient(135deg, #YOUR_COLOR1, #YOUR_COLOR2);
-}
-
-/* Change face */
-.avatar::after {
-  content: '●‿●';  /* Try different emoji faces */
-}
-```
-
-### Modify Speed
-
-Edit `renderer.js`:
-
-```javascript
-const state = {
-  // ...
-  speed: 3,  // Increase for faster movement
-};
-```
-
-### Add Custom Messages
-
-Edit the message arrays in `renderer.js`:
-
-```javascript
-const messages = [
-  "Your custom message! 🌟",
-  "Another message! ✨"
-];
-```
+By right-clicking the avatar, you can access:
+- **Themes**: Original Pink, Cool Blue, Deep Purple, Neon Green, Sunlight Yellow.
+- **Expressions**: Happy, Dot, Kawaii, Star, Zen.
+- **Size**: Tiny, Small, Standard, Large, Giant.
 
 ---
 
 ## 🛠️ Development
-
-### Enable DevTools
-
-Uncomment in `main.js`:
-
-```javascript
-mainWindow.webContents.openDevTools({ mode: 'detach' });
-```
 
 ### Debug Mode
 
@@ -271,26 +187,10 @@ npm run dev
 | Channel | Direction | Purpose |
 |---------|-----------|---------|
 | `set-ignore-mouse-events` | Renderer → Main | Toggle click-through |
-
-### Speech Bubble API
-
-```javascript
-showSpeechBubble(
-  text,              // String: message to display
-  mood,              // 'normal' | 'thinking' | 'excited'
-  duration           // Number: ms before auto-hide (0 = permanent)
-);
-```
-
-### Particle API
-
-```javascript
-createParticle(
-  x,                 // Number: x position
-  y,                 // Number: y position  
-  emoji              // String: emoji to display
-);
-```
+| `show-avatar-menu` | Renderer → Main | Trigger context menu |
+| `change-theme` | Main → Renderer | Apply selected color theme |
+| `change-face` | Main → Renderer | Apply selected expression |
+| `change-size` | Main → Renderer | Apply selected size scale |
 
 ---
 
@@ -301,7 +201,6 @@ createParticle(
 - [ ] Desktop icon interaction
 - [ ] Multiple avatar skins
 - [ ] Settings panel
-- [ ] System tray icon
 
 ---
 
