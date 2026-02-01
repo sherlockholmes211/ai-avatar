@@ -18,7 +18,7 @@ function createWindow() {
         hasShadow: false,         // No shadow
         resizable: false,
         skipTaskbar: true,        // Don't show in taskbar
-        focusable: true,
+        focusable: false,         // Don't steal focus from other apps
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false,
@@ -29,12 +29,15 @@ function createWindow() {
     // Load the HTML file
     mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
-    // Make clicks pass through transparent areas
-    mainWindow.setIgnoreMouseEvents(false);
+    // SMART CLICK-THROUGH: Enable click-through by default
+    // Clicks will pass through to desktop unless we're over the avatar
+    mainWindow.setIgnoreMouseEvents(true, { forward: true });
 
-    // Handle click-through for transparent areas
+    // Handle dynamic click-through toggling from renderer
     ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
-        mainWindow.setIgnoreMouseEvents(ignore, options);
+        if (mainWindow) {
+            mainWindow.setIgnoreMouseEvents(ignore, options);
+        }
     });
 
     // Set window level (macOS specific)
@@ -50,7 +53,7 @@ function createWindow() {
         mainWindow = null;
     });
 
-    // Handle screen size changes - moved inside createWindow
+    // Handle screen size changes
     screen.on('display-metrics-changed', () => {
         if (mainWindow) {
             const { width, height } = screen.getPrimaryDisplay().workAreaSize;

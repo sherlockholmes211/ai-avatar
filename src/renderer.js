@@ -19,6 +19,39 @@ const avatar = document.getElementById('avatar');
 const speechBubble = document.getElementById('speech-bubble');
 const bubbleText = document.getElementById('bubble-text');
 
+// ==========================================
+// SMART CLICK-THROUGH SYSTEM
+// ==========================================
+// By default, clicks pass through to desktop
+// Only when mouse is over avatar or speech bubble, we capture clicks
+
+function enableClickCapture() {
+    ipcRenderer.send('set-ignore-mouse-events', false);
+}
+
+function enableClickThrough() {
+    ipcRenderer.send('set-ignore-mouse-events', true, { forward: true });
+}
+
+// Track mouse over interactive elements
+avatarContainer.addEventListener('mouseenter', () => {
+    enableClickCapture();
+});
+
+avatarContainer.addEventListener('mouseleave', () => {
+    if (!state.isDragging) {
+        enableClickThrough();
+    }
+});
+
+speechBubble.addEventListener('mouseenter', () => {
+    enableClickCapture();
+});
+
+speechBubble.addEventListener('mouseleave', () => {
+    enableClickThrough();
+});
+
 // Initialize avatar position
 function initAvatar() {
     avatarContainer.style.left = `${state.x}px`;
@@ -27,7 +60,7 @@ function initAvatar() {
 
     // Show welcome message after a short delay
     setTimeout(() => {
-        showSpeechBubble("Hi! I'm your AI buddy! 🌟\nClick anywhere and I'll come to you!", 'excited');
+        showSpeechBubble("Hi! I'm your AI buddy! 🌟\nClick me to interact!", 'excited');
     }, 1000);
 }
 
@@ -207,6 +240,9 @@ document.addEventListener('mouseup', () => {
         createParticle(state.x + 40, state.y, '💫');
         createParticle(state.x + 50, state.y + 20, '⭐');
         createParticle(state.x + 30, state.y + 10, '✨');
+
+        // Re-enable click-through after drag ends
+        enableClickThrough();
     }
 });
 
