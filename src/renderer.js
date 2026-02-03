@@ -64,10 +64,44 @@ function initAvatar() {
     }, 1000);
 }
 
-// Update avatar position
+// Update avatar position and frame
 function updateAvatarPosition() {
     avatarContainer.style.left = `${state.x}px`;
     avatarContainer.style.top = `${state.y}px`;
+
+    // Map state to sprite sheet frames (3x2 grid)
+    // Row 0 (frameY = 0): [0:Standing/Walk, 1:Idle Sit, 2:Tea Sit]
+    // Row 1 (frameY = 1): [0:Read+Cat, 1:Tea+Cat, 2:Read]
+    let frameX = 0, frameY = 0;
+
+    if (state.isDragging || state.emotion === 'excited') {
+        frameX = 0; frameY = 0; // Standing for action
+    } else if (state.isMoving) {
+        frameX = 0; frameY = 0; // Walking pose
+    } else {
+        // Use the randomly selected idle frame
+        // idleIndex 0-4 (mapping to the 5 sitting/reading poses)
+        const idleIndex = state.idleIndex || 0;
+        const frames = [
+            { x: 1, y: 0 }, // Idle Sit
+            { x: 2, y: 0 }, // Tea Sit
+            { x: 0, y: 1 }, // Read + Cat
+            { x: 1, y: 1 }, // Tea + Cat
+            { x: 2, y: 1 }  // Read
+        ];
+        frameX = frames[idleIndex].x;
+        frameY = frames[idleIndex].y;
+    }
+
+    avatar.style.setProperty('--frame-x', frameX);
+    avatar.style.setProperty('--frame-y', frameY);
+
+    // Flip avatar based on direction (only for walking/standing)
+    if (state.isMoving || state.isDragging) {
+        avatar.style.transform = state.direction === 'left' ? 'scaleX(-1)' : 'scaleX(1)';
+    } else {
+        avatar.style.transform = 'scaleX(1)'; // Always face right when sitting/reading
+    }
 
     // Update speech bubble position
     updateSpeechBubblePosition();
@@ -166,7 +200,7 @@ function typewriterEffect(text) {
 // Update speech bubble position relative to avatar
 function updateSpeechBubblePosition() {
     const bubbleWidth = speechBubble.offsetWidth || 200;
-    const avatarWidth = avatarContainer.offsetWidth || 80;
+    const avatarWidth = avatarContainer.offsetWidth || 120;
 
     // Position above and centered on avatar
     let bubbleX = state.x + (avatarWidth / 2) - (bubbleWidth / 2);
@@ -204,8 +238,8 @@ document.addEventListener('mousemove', (e) => {
         state.targetY = state.y;
 
         // Keep within bounds
-        state.x = Math.max(0, Math.min(window.innerWidth - 80, state.x));
-        state.y = Math.max(0, Math.min(window.innerHeight - 100, state.y));
+        state.x = Math.max(0, Math.min(window.innerWidth - 200, state.x));
+        state.y = Math.max(0, Math.min(window.innerHeight - 200, state.y));
 
         updateAvatarPosition();
     }
@@ -217,13 +251,17 @@ document.addEventListener('mouseup', () => {
         avatar.classList.remove('excited');
         avatar.classList.add('idle');
 
+        // Randomly pick an idle sitting pose after drag
+        state.idleIndex = Math.floor(Math.random() * 5);
+
         showSpeechBubble("Wheee! That was fun! 🎉", 'excited');
-        createParticle(state.x + 40, state.y, '💫');
-        createParticle(state.x + 50, state.y + 20, '⭐');
-        createParticle(state.x + 30, state.y + 10, '✨');
+        createParticle(state.x + 100, state.y + 50, '💫');
+        createParticle(state.x + 120, state.y + 70, '⭐');
+        createParticle(state.x + 80, state.y + 60, '✨');
 
         // Re-enable click-through after drag ends
         enableClickThrough();
+        updateAvatarPosition();
     }
 });
 
@@ -258,12 +296,17 @@ function randomIdleBehavior() {
             // Small random move
             const offsetX = (Math.random() - 0.5) * 100;
             const offsetY = (Math.random() - 0.5) * 100;
-            state.targetX = Math.max(0, Math.min(window.innerWidth - 80, state.x + offsetX));
-            state.targetY = Math.max(0, Math.min(window.innerHeight - 100, state.y + offsetY));
+            state.targetX = Math.max(0, Math.min(window.innerWidth - 200, state.x + offsetX));
+            state.targetY = Math.max(0, Math.min(window.innerHeight - 200, state.y + offsetY));
         },
         () => {
             // Just sparkle
-            createParticle(state.x + 40, state.y, '✨');
+            createParticle(state.x + 100, state.y + 100, '✨');
+        },
+        () => {
+            // Switch sitting/reading pose
+            state.idleIndex = Math.floor(Math.random() * 5);
+            updateAvatarPosition();
         }
     ];
 
@@ -288,11 +331,11 @@ avatarContainer.addEventListener('dblclick', () => {
     // Party particles
     for (let i = 0; i < 5; i++) {
         setTimeout(() => {
-            const emojis = ['💖', '⭐', '🌟', '✨', '💫'];
+            const emojis = ['💖', '⭐', '🌟', '✨', '💫', '☕', '📖', '🐱'];
             createParticle(
-                state.x + 40 + (Math.random() - 0.5) * 60,
-                state.y + (Math.random() - 0.5) * 40,
-                emojis[i % emojis.length]
+                state.x + 100 + (Math.random() - 0.5) * 80,
+                state.y + 80 + (Math.random() - 0.5) * 60,
+                emojis[Math.floor(Math.random() * emojis.length)]
             );
         }, i * 100);
     }
@@ -320,8 +363,8 @@ gameLoop();
 // Handle window resize
 window.addEventListener('resize', () => {
     // Keep avatar within new bounds
-    state.x = Math.min(state.x, window.innerWidth - 80);
-    state.y = Math.min(state.y, window.innerHeight - 100);
+    state.x = Math.min(state.x, window.innerWidth - 200);
+    state.y = Math.min(state.y, window.innerHeight - 200);
     state.targetX = state.x;
     state.targetY = state.y;
     updateAvatarPosition();

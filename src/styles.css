@@ -45,47 +45,32 @@ body {
   transition: transform 0.3s ease;
 }
 
-/* Cute isometric avatar */
+/* Anime Avatar - Sprite Sheet Support */
 .avatar {
-  width: 80px;
-  height: 100px;
+  width: 200px;
+  /* Increased for better detail from the sheet */
+  height: 200px;
   position: relative;
   cursor: grab;
   transition: transform 0.1s ease;
+
+  /* Sprite sheet configuration (3x2 grid) */
+  background-image: url('../assets/hoodie_girl_spritesheet-Photoroom.png');
+  background-size: 300% 200%;
+  /* 3 columns, 2 rows */
+  background-position: calc(var(--frame-x, 0) * 50%) calc(var(--frame-y, 0) * 100%);
+  background-repeat: no-repeat;
+
+  --frame-x: 0;
+  --frame-y: 0;
 }
+
 
 .avatar:active {
   cursor: grabbing;
   transform: scale(1.1);
 }
 
-/* Avatar body (isometric cube style) */
-.avatar::before {
-  content: '';
-  position: absolute;
-  width: 60px;
-  height: 60px;
-  background: linear-gradient(135deg, var(--avatar-primary) 0%, var(--avatar-secondary) 50%, var(--avatar-accent) 100%);
-  border-radius: 20px;
-  transform: rotateX(15deg) rotateY(-15deg);
-  box-shadow:
-    0 10px 30px var(--avatar-shadow),
-    inset 0 -5px 15px rgba(255, 255, 255, 0.3),
-    inset 0 5px 15px rgba(255, 255, 255, 0.5);
-  left: 10px;
-  top: 10px;
-}
-
-/* Avatar face */
-.avatar::after {
-  content: '◕‿◕';
-  position: absolute;
-  font-size: 24px;
-  left: 18px;
-  top: 25px;
-  color: #333;
-  text-shadow: none;
-}
 
 /* Speech bubble */
 .speech-bubble {
@@ -209,16 +194,14 @@ body {
   animation: float 3s ease-in-out infinite;
 }
 
-/* Walking animation */
+/* Walking animation - Changed to a smooth float to match the sitting pose */
 .avatar.walking {
-  animation: walk 0.4s ease-in-out infinite;
+  animation: float 1.5s ease-in-out infinite;
+  /* Reuse float but faster */
 }
+
 
 /* Sleeping animation */
-.avatar.sleeping::after {
-  content: '−‿−';
-}
-
 .avatar.sleeping {
   animation: none;
   transform: rotate(-10deg);
@@ -227,10 +210,6 @@ body {
 /* Excited animation */
 .avatar.excited {
   animation: bubbleBounce 0.3s ease-in-out infinite;
-}
-
-.avatar.excited::after {
-  content: '★‿★';
 }
 
 /* Particle effects */

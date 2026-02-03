@@ -64,18 +64,12 @@ function setTheme(themeName, shouldSave = true) {
 }
 
 function setFace(face, shouldSave = true) {
-    let styleTag = document.getElementById('avatar-face-style');
-    if (!styleTag) {
-        styleTag = document.createElement('style');
-        styleTag.id = 'avatar-face-style';
-        document.head.appendChild(styleTag);
-    }
-    styleTag.innerHTML = `.avatar::after { content: '${face}'; }`;
-
+    // Note: Expressions are currently static for the high-quality anime sprite
+    // Future update: Support multiple asset frames for different expressions
     if (shouldSave) {
         savePreference('face', face);
         if (typeof showSpeechBubble === 'function') {
-            showSpeechBubble(`Do you like my new face? ${face}`, 'excited');
+            showSpeechBubble(`I'm practicing that face! ${face}\n(Coming soon ✨)`, 'normal');
         }
     }
 }
