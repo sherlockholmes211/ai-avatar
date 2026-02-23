@@ -149,30 +149,73 @@ function updateSpeechBubblePosition() {
 // ==========================================
 
 const micBtn = document.getElementById('mic-btn');
-let recognition = null;
-let isListening = false;
 
-// Initialize Speech Recognition (ElevenLabs Scribe)
+// ── VAD / STT CONFIGURATION ──────────────────────────────────────────────────
+const VAD = {
+    SILENCE_THRESHOLD: 0.01,   // RMS below this = silence
+    SILENCE_DURATION: 1500,   // ms of silence after speech before auto-commit
+    MIN_SPEECH_MS: 300,    // minimum speech before silence timer starts
+    WAKE_UP_DELAY: 800,    // ms to wait before listening again after a response
+};
+
+// ── SYSTEM STATE ─────────────────────────────────────────────────────────────
+//   'IDLE'       → mic is open, waiting for voice to start
+//   'SPEAKING'   → voice detected, streaming to ElevenLabs
+//   'PROCESSING' → committed, waiting for transcript + Ollama
+let vadState = 'IDLE';
+let isMuted = false;   // mic button toggles this
+// ─────────────────────────────────────────────────────────────────────────────
+
+function setVadState(newState) {
+    vadState = newState;
+    console.log(`VAD state → ${newState}`);
+    updateMicVisual();
+}
+
+function updateMicVisual() {
+    if (!micBtn) return;
+    micBtn.style.transition = 'all 0.2s ease';
+    if (isMuted) {
+        micBtn.style.background = '#cccccc';
+        micBtn.style.transform = 'scale(1)';
+        micBtn.title = 'Unmute (click to talk again)';
+    } else if (vadState === 'IDLE') {
+        micBtn.style.background = 'white';
+        micBtn.style.transform = 'scale(1)';
+        micBtn.title = 'Listening for your voice...';
+    } else if (vadState === 'SPEAKING') {
+        micBtn.style.background = '#ff4444';
+        micBtn.style.transform = 'scale(1.12)';
+        micBtn.title = 'Hearing you!';
+    } else if (vadState === 'PROCESSING') {
+        micBtn.style.background = '#ffaa00';
+        micBtn.style.transform = 'scale(1)';
+        micBtn.title = 'Processing...';
+    }
+}
+
+// ── CONTINUOUS HANDS-FREE LOOP ────────────────────────────────────────────────
 async function initSpeechRecognition() {
+    if (!CONFIG.ELEVENLABS_API_KEY) {
+        showSpeechBubble("ElevenLabs API key missing! 🔑", 'thinking', 5000);
+        console.error('ELEVENLABS_API_KEY not set — STT disabled.');
+        return;
+    }
 
-    // AudioWorklet processor code as a blob URL (avoids deprecated ScriptProcessorNode)
+    // AudioWorklet blob (avoids deprecated ScriptProcessorNode)
     const workletCode = `
         class PCMProcessor extends AudioWorkletProcessor {
             constructor() {
                 super();
-                this._buffer = [];
-                this._bufferSize = 4096;
+                this._buf = [];
+                this._size = 4096;
             }
             process(inputs) {
-                const input = inputs[0];
-                if (input && input[0]) {
-                    const channelData = input[0];
-                    for (let i = 0; i < channelData.length; i++) {
-                        this._buffer.push(channelData[i]);
-                    }
-                    while (this._buffer.length >= this._bufferSize) {
-                        const chunk = this._buffer.splice(0, this._bufferSize);
-                        this.port.postMessage({ pcm: new Float32Array(chunk) });
+                const ch = inputs[0] && inputs[0][0];
+                if (ch) {
+                    for (let i = 0; i < ch.length; i++) this._buf.push(ch[i]);
+                    while (this._buf.length >= this._size) {
+                        this.port.postMessage({ pcm: new Float32Array(this._buf.splice(0, this._size)) });
                     }
                 }
                 return true;
@@ -180,204 +223,183 @@ async function initSpeechRecognition() {
         }
         registerProcessor('pcm-processor', PCMProcessor);
     `;
-    const workletBlob = new Blob([workletCode], { type: 'application/javascript' });
-    const workletBlobUrl = URL.createObjectURL(workletBlob);
+    const workletBlobUrl = URL.createObjectURL(new Blob([workletCode], { type: 'application/javascript' }));
 
-    async function startScribing() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // ── Open mic ONCE and keep it open forever ────────────────────────────────
+    let stream;
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+        console.error('Mic access denied:', err);
+        showSpeechBubble("Mic access denied! 🎙️", 'thinking', 5000);
+        return;
+    }
 
-            // Pass API key as query param — browser WebSocket API doesn't support custom headers
-            const wsUrl = `wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&xi-api-key=${CONFIG.ELEVENLABS_API_KEY}`;
-            const socket = new WebSocket(wsUrl);
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    await audioContext.audioWorklet.addModule(workletBlobUrl);
+    const source = audioContext.createMediaStreamSource(stream);
+    const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
+    source.connect(workletNode);
+    workletNode.connect(audioContext.destination);
 
-            socket.onopen = async () => {
-                console.log('ElevenLabs: Scribe WebSocket connected');
+    console.log('🎙️ Hands-free always-on listening started');
+    showSpeechBubble("I'm always listening! Just speak 🎙️", 'excited', 3000);
+    setVadState('IDLE');
 
-                // Use AudioWorkletNode instead of deprecated ScriptProcessorNode
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-                await audioContext.audioWorklet.addModule(workletBlobUrl);
-                const source = audioContext.createMediaStreamSource(stream);
-                const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
+    // ── Per-utterance session state (reset each time we go back to IDLE) ─────
+    let socket = null;
+    let silenceTimer = null;
+    let hasSpeechStarted = false;
+    let speechStartTime = null;
+    // ─────────────────────────────────────────────────────────────────────────
 
-                source.connect(workletNode);
-                workletNode.connect(audioContext.destination);
+    function computeRMS(f32) {
+        let s = 0;
+        for (let i = 0; i < f32.length; i++) s += f32[i] * f32[i];
+        return Math.sqrt(s / f32.length);
+    }
 
-                // ── VAD STATE ────────────────────────────────────────────────
-                const VAD_SILENCE_THRESHOLD = 0.01;  // RMS level below this = silence
-                const VAD_SILENCE_DURATION = 1500;  // ms of silence before auto-stop
-                const VAD_MIN_SPEECH_MS = 300;   // must speak at least this long first
+    function resetSession() {
+        if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+        socket = null;
+        hasSpeechStarted = false;
+        speechStartTime = null;
+    }
 
-                let hasSpeechStarted = false;  // did user say anything yet?
-                let silenceTimer = null;   // setTimeout handle
-                let speechStartTime = null;   // when did speech begin?
-                let autoStopping = false;  // guard against double-fire
-                // ─────────────────────────────────────────────────────────────
+    // Opens a fresh WS to ElevenLabs — called once per detected utterance
+    function openElevenLabsSocket() {
+        const wsUrl = `wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&xi-api-key=${CONFIG.ELEVENLABS_API_KEY}`;
+        const ws = new WebSocket(wsUrl);
 
-                function computeRMS(float32Array) {
-                    let sum = 0;
-                    for (let i = 0; i < float32Array.length; i++) {
-                        sum += float32Array[i] * float32Array[i];
-                    }
-                    return Math.sqrt(sum / float32Array.length);
-                }
+        ws.onopen = () => console.log('ElevenLabs WS opened');
 
-                function triggerAutoStop() {
-                    if (autoStopping || !isListening) return;
-                    autoStopping = true;
-                    console.log('VAD: silence detected — auto-committing');
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
 
-                    isListening = false;
-                    if (micBtn) {
-                        micBtn.style.background = 'white';
-                        micBtn.style.transform = 'scale(1)';
-                        micBtn.style.transition = 'all 0.3s ease';
-                    }
+            if (data.message_type === 'partial_transcript' && data.text) {
+                showSpeechBubble(`"${data.text}..."`, 'normal', 0);
 
-                    // Tell ElevenLabs we're done sending audio
-                    if (socket.readyState === WebSocket.OPEN) {
-                        socket.send(JSON.stringify({
-                            message_type: 'input_audio_chunk',
-                            audio_base_64: '',
-                            commit: true
-                        }));
-                    }
-                    audioContext.close();
-                }
+            } else if (data.message_type === 'committed_transcript') {
+                const transcript = data.text?.trim();
+                console.log('ElevenLabs transcript:', transcript);
 
-                workletNode.port.onmessage = (e) => {
-                    if (!isListening || autoStopping) return;
+                setVadState('PROCESSING');
 
-                    const inputData = e.data.pcm;
-                    const rms = computeRMS(inputData);
-
-                    // ── VOICE ACTIVITY DETECTION ──────────────────────────────
-                    if (rms > VAD_SILENCE_THRESHOLD) {
-                        // Active speech detected
-                        if (!hasSpeechStarted) {
-                            hasSpeechStarted = true;
-                            speechStartTime = Date.now();
-                            console.log('VAD: speech started');
-                            showSpeechBubble('Listening... 🎙️', 'thinking', 0);
-                        }
-
-                        // Voice is active → clear any pending silence timer
-                        if (silenceTimer) {
-                            clearTimeout(silenceTimer);
-                            silenceTimer = null;
-                        }
-
-                        // Visual: mic pulses red while speaking
-                        if (micBtn) {
-                            micBtn.style.background = '#ff4444';
-                            micBtn.style.transform = 'scale(1.1)';
-                        }
-
-                    } else if (hasSpeechStarted) {
-                        // We've had speech before, now it's quiet
-                        const speechDuration = Date.now() - speechStartTime;
-
-                        // Visual: mic dims to indicate silence
-                        if (micBtn) {
-                            micBtn.style.background = '#ffcccc';
-                            micBtn.style.transform = 'scale(1)';
-                        }
-
-                        // Only start silence timer after minimum speech duration
-                        if (speechDuration >= VAD_MIN_SPEECH_MS && !silenceTimer) {
-                            silenceTimer = setTimeout(() => {
-                                triggerAutoStop();
-                            }, VAD_SILENCE_DURATION);
-                        }
-                    }
-                    // ─────────────────────────────────────────────────────────
-
-                    // Convert Float32 to 16-bit PCM and send to ElevenLabs
-                    const buffer = new Int16Array(inputData.length);
-                    for (let i = 0; i < inputData.length; i++) {
-                        buffer[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
-                    }
-
-                    const base64Audio = Buffer.from(buffer.buffer).toString('base64');
-
-                    if (socket.readyState === WebSocket.OPEN) {
-                        socket.send(JSON.stringify({
-                            message_type: 'input_audio_chunk',
-                            audio_base_64: base64Audio
-                        }));
-                    }
-                };
-            };
-
-            socket.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-
-                // Handle text updates
-                if (data.message_type === 'partial_transcript') {
-                    if (data.text) showSpeechBubble(`"${data.text}..."`, 'normal', 0);
-                } else if (data.message_type === 'committed_transcript') {
-                    const transcript = data.text;
-                    console.log('ElevenLabs Result:', transcript);
-                    showSpeechBubble(`You: "${transcript}"`, 'normal', 2500);
-
-                    isListening = false;
-                    if (micBtn) micBtn.style.background = 'white';
-
-                    setTimeout(() => {
-                        queryOllama(transcript);
-                    }, 2500);
-
-                    socket.close();
-                } else if (data.message_type === 'input_error' || data.message_type === 'transcriber_error') {
-                    console.error('ElevenLabs STT Error:', data.error);
+                if (transcript) {
+                    showSpeechBubble(`You: "${transcript}"`, 'normal', 3000);
+                    // Query Ollama — VAD loop resumes after response
+                    setTimeout(() => queryOllama(transcript), 500);
                 } else {
-                    console.log('ElevenLabs WS message:', data);
+                    // Empty transcript — skip Ollama, go back to listening
+                    console.log('VAD: empty transcript, resetting');
+                    resetSession();
+                    setTimeout(() => setVadState('IDLE'), 500);
                 }
-            };
+                ws.close();
 
-            socket.onerror = (err) => {
-                console.error('ElevenLabs STT Socket Error:', err);
-                showSpeechBubble("Speech socket error! 🎙️", 'thinking', 3000);
-                isListening = false;
-                if (micBtn) micBtn.style.background = 'white';
-            };
+            } else if (data.message_type === 'input_error' || data.message_type === 'transcriber_error') {
+                console.error('ElevenLabs STT error:', data.error);
+                resetSession();
+                setVadState('IDLE');
+            } else {
+                console.log('ElevenLabs WS msg:', data);
+            }
+        };
 
-            socket.onclose = (event) => {
-                console.log(`ElevenLabs WS closed: code=${event.code}, reason=${event.reason}`);
-            };
+        ws.onerror = (err) => {
+            console.error('ElevenLabs WS error:', err);
+            showSpeechBubble("STT error — will retry on next speech 🔄", 'thinking', 3000);
+            resetSession();
+            setVadState('IDLE');
+        };
 
-        } catch (err) {
-            console.error('Failed to start ElevenLabs Scribe:', err);
-            showSpeechBubble("Mic error. Check permissions! 🎙️", 'thinking', 3000);
-            isListening = false;
-            if (micBtn) micBtn.style.background = 'white';
+        ws.onclose = (e) => console.log(`ElevenLabs WS closed (${e.code})`);
+        return ws;
+    }
+
+    // Called after VAD_SILENCE_DURATION ms of quiet — tells ElevenLabs we're done
+    function commitAudio() {
+        if (vadState !== 'SPEAKING') return;
+        console.log('VAD: silence timeout — committing audio');
+        setVadState('PROCESSING');
+
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                message_type: 'input_audio_chunk',
+                audio_base_64: '',
+                commit: true
+            }));
         }
     }
 
-    // Attach click listener
-    if (micBtn) {
-        micBtn.style.display = 'flex'; // show button
-        micBtn.addEventListener('click', () => {
-            if (isListening) {
-                isListening = false;
-                micBtn.style.background = 'white';
-                micBtn.style.transform = 'scale(1)';
+    // ── Main audio loop: runs for every 4096-sample chunk ────────────────────
+    workletNode.port.onmessage = (e) => {
+        if (isMuted || vadState === 'PROCESSING') return;
+
+        const pcm = e.data.pcm;
+        const rms = computeRMS(pcm);
+        const isVoice = rms > VAD.SILENCE_THRESHOLD;
+
+        // IDLE: waiting for voice to start
+        if (vadState === 'IDLE') {
+            if (isVoice) {
+                hasSpeechStarted = true;
+                speechStartTime = Date.now();
+                socket = openElevenLabsSocket();
+                setVadState('SPEAKING');
+                showSpeechBubble('Listening... 🎙️', 'thinking', 0);
+            }
+            return; // don't send audio while IDLE — no WS open yet
+        }
+
+        // SPEAKING: voice is detected, stream to ElevenLabs
+        if (vadState === 'SPEAKING') {
+            // Convert Float32 → 16-bit PCM → Base64 → send
+            const buf = new Int16Array(pcm.length);
+            for (let i = 0; i < pcm.length; i++) {
+                buf[i] = Math.max(-1, Math.min(1, pcm[i])) * 0x7FFF;
+            }
+            const b64 = Buffer.from(buf.buffer).toString('base64');
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ message_type: 'input_audio_chunk', audio_base_64: b64 }));
+            }
+
+            if (isVoice) {
+                // Still speaking — cancel any silence timer
+                if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+                updateMicVisual();
             } else {
-                if (!CONFIG.ELEVENLABS_API_KEY) {
-                    showSpeechBubble("Need ElevenLabs API Key! 🔑", 'thinking', 4000);
-                    return;
+                // Gone quiet — start silence countdown
+                const elapsed = Date.now() - speechStartTime;
+                if (micBtn) { micBtn.style.background = '#ffcccc'; micBtn.style.transform = 'scale(1)'; }
+                if (elapsed >= VAD.MIN_SPEECH_MS && !silenceTimer) {
+                    silenceTimer = setTimeout(commitAudio, VAD.SILENCE_DURATION);
                 }
-                isListening = true;
-                micBtn.style.background = '#ffcccc'; // light red — waiting for speech
-                micBtn.style.transform = 'scale(1)';
-                showSpeechBubble("Say something... 🎙️", 'thinking', 0);
-                startScribing();
+            }
+        }
+    };
+
+    // ── Mic button = mute / unmute toggle ────────────────────────────────────
+    if (micBtn) {
+        micBtn.style.display = 'flex';
+        micBtn.title = 'Mute / Unmute';
+        micBtn.addEventListener('click', () => {
+            isMuted = !isMuted;
+            if (isMuted) {
+                showSpeechBubble("Muted 🔇 Click mic to unmute", 'thinking', 3000);
+                if (silenceTimer) clearTimeout(silenceTimer);
+                if (socket && socket.readyState === WebSocket.OPEN) socket.close();
+                resetSession();
+                setVadState('IDLE');
+            } else {
+                showSpeechBubble("Unmuted! Just speak 🎙️", 'excited', 2000);
+                setVadState('IDLE');
             }
         });
     }
 }
 
-// Query Local Ollama Instance
+// Query Local Ollama Instance — resets VAD to IDLE after response
 async function queryOllama(prompt) {
     showSpeechBubble("Thinking... 🤔", 'thinking', 0); // Keep thinking bubble open
     try {
@@ -412,9 +434,17 @@ async function queryOllama(prompt) {
             playTTSReply(llmReply);
         }
 
+        // ── Resume hands-free listening after the reply ──
+        // Wait a bit so the user can read the response before we start capturing again
+        setTimeout(() => {
+            setVadState('IDLE');
+        }, VAD.WAKE_UP_DELAY);
+
     } catch (error) {
         console.error('Ollama Query Failed:', error);
         showSpeechBubble("Could not connect to my brain (Ollama). Is it running? 🧠🔌", 'thinking', 5000);
+        // Resume listening even on error
+        setTimeout(() => setVadState('IDLE'), VAD.WAKE_UP_DELAY);
     }
 }
 
