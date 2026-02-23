@@ -154,47 +154,95 @@ let isListening = false;
 
 // Initialize Speech Recognition (ElevenLabs Scribe)
 async function initSpeechRecognition() {
-    let scribeStream = null;
+
+    // AudioWorklet processor code as a blob URL (avoids deprecated ScriptProcessorNode)
+    const workletCode = `
+        class PCMProcessor extends AudioWorkletProcessor {
+            constructor() {
+                super();
+                this._buffer = [];
+                this._bufferSize = 4096;
+            }
+            process(inputs) {
+                const input = inputs[0];
+                if (input && input[0]) {
+                    const channelData = input[0];
+                    for (let i = 0; i < channelData.length; i++) {
+                        this._buffer.push(channelData[i]);
+                    }
+                    while (this._buffer.length >= this._bufferSize) {
+                        const chunk = this._buffer.splice(0, this._bufferSize);
+                        this.port.postMessage({ pcm: new Float32Array(chunk) });
+                    }
+                }
+                return true;
+            }
+        }
+        registerProcessor('pcm-processor', PCMProcessor);
+    `;
+    const workletBlob = new Blob([workletCode], { type: 'application/javascript' });
+    const workletBlobUrl = URL.createObjectURL(workletBlob);
 
     async function startScribing() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            // ElevenLabs Scribe Streaming logic (Using the official realtime endpoint)
-            const socket = new WebSocket(`wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime`);
+            // Pass API key as query param — browser WebSocket API doesn't support custom headers
+            const wsUrl = `wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&xi-api-key=${CONFIG.ELEVENLABS_API_KEY}`;
+            const socket = new WebSocket(wsUrl);
 
-            socket.onopen = () => {
+            socket.onopen = async () => {
                 console.log('ElevenLabs: Scribe WebSocket connected');
 
-                // Audio processing
+                // Use AudioWorkletNode instead of deprecated ScriptProcessorNode
                 const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                await audioContext.audioWorklet.addModule(workletBlobUrl);
                 const source = audioContext.createMediaStreamSource(stream);
-                const processor = audioContext.createScriptProcessor(4096, 1, 1);
+                const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
 
-                source.connect(processor);
-                processor.connect(audioContext.destination);
+                source.connect(workletNode);
+                workletNode.connect(audioContext.destination);
 
-                processor.onaudioprocess = (e) => {
+                workletNode.port.onmessage = (e) => {
                     if (!isListening) {
-                        socket.close();
+                        // Signal end of audio
+                        if (socket.readyState === WebSocket.OPEN) {
+                            socket.send(JSON.stringify({
+                                message_type: 'input_audio_chunk',
+                                audio_base_64: '',
+                                commit: true
+                            }));
+                        }
                         audioContext.close();
                         return;
                     }
-                    const inputData = e.inputBuffer.getChannelData(0);
-                    // Convert to 16bit PCM
+
+                    const inputData = e.data.pcm;
+                    // Convert Float32 to 16-bit PCM
                     const buffer = new Int16Array(inputData.length);
                     for (let i = 0; i < inputData.length; i++) {
                         buffer[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
                     }
 
-                    // Send raw binary PCM data directly (as expected by ElevenLabs Scribe v2)
-                    socket.send(buffer.buffer);
+                    // Convert Int16Array to Base64 using Node's Buffer (safe in Electron)
+                    const base64Audio = Buffer.from(buffer.buffer).toString('base64');
+
+                    if (socket.readyState === WebSocket.OPEN) {
+                        socket.send(JSON.stringify({
+                            message_type: 'input_audio_chunk',
+                            audio_base_64: base64Audio
+                        }));
+                    }
                 };
             };
 
             socket.onmessage = (event) => {
                 const data = JSON.parse(event.data);
-                if (data.type === 'transcript' && data.is_final) {
+
+                // Handle text updates
+                if (data.message_type === 'partial_transcript') {
+                    showSpeechBubble(`Listening: "${data.text}"`, 'normal');
+                } else if (data.message_type === 'committed_transcript') {
                     const transcript = data.text;
                     console.log('ElevenLabs Result:', transcript);
                     showSpeechBubble(`You: "${transcript}"`, 'normal', 2500);
@@ -207,14 +255,22 @@ async function initSpeechRecognition() {
                     }, 2500);
 
                     socket.close();
+                } else if (data.message_type === 'input_error' || data.message_type === 'transcriber_error') {
+                    console.error('ElevenLabs STT Error:', data.error);
+                } else {
+                    console.log('ElevenLabs WS message:', data);
                 }
             };
 
             socket.onerror = (err) => {
-                console.error('ElevenLabs STT Error:', err);
-                showSpeechBubble("Speech error! 🎙️", 'thinking', 3000);
+                console.error('ElevenLabs STT Socket Error:', err);
+                showSpeechBubble("Speech socket error! 🎙️", 'thinking', 3000);
                 isListening = false;
                 if (micBtn) micBtn.style.background = 'white';
+            };
+
+            socket.onclose = (event) => {
+                console.log(`ElevenLabs WS closed: code=${event.code}, reason=${event.reason}`);
             };
 
         } catch (err) {
