@@ -203,28 +203,101 @@ async function initSpeechRecognition() {
                 source.connect(workletNode);
                 workletNode.connect(audioContext.destination);
 
-                workletNode.port.onmessage = (e) => {
-                    if (!isListening) {
-                        // Signal end of audio
-                        if (socket.readyState === WebSocket.OPEN) {
-                            socket.send(JSON.stringify({
-                                message_type: 'input_audio_chunk',
-                                audio_base_64: '',
-                                commit: true
-                            }));
-                        }
-                        audioContext.close();
-                        return;
+                // ── VAD STATE ────────────────────────────────────────────────
+                const VAD_SILENCE_THRESHOLD = 0.01;  // RMS level below this = silence
+                const VAD_SILENCE_DURATION = 1500;  // ms of silence before auto-stop
+                const VAD_MIN_SPEECH_MS = 300;   // must speak at least this long first
+
+                let hasSpeechStarted = false;  // did user say anything yet?
+                let silenceTimer = null;   // setTimeout handle
+                let speechStartTime = null;   // when did speech begin?
+                let autoStopping = false;  // guard against double-fire
+                // ─────────────────────────────────────────────────────────────
+
+                function computeRMS(float32Array) {
+                    let sum = 0;
+                    for (let i = 0; i < float32Array.length; i++) {
+                        sum += float32Array[i] * float32Array[i];
+                    }
+                    return Math.sqrt(sum / float32Array.length);
+                }
+
+                function triggerAutoStop() {
+                    if (autoStopping || !isListening) return;
+                    autoStopping = true;
+                    console.log('VAD: silence detected — auto-committing');
+
+                    isListening = false;
+                    if (micBtn) {
+                        micBtn.style.background = 'white';
+                        micBtn.style.transform = 'scale(1)';
+                        micBtn.style.transition = 'all 0.3s ease';
                     }
 
+                    // Tell ElevenLabs we're done sending audio
+                    if (socket.readyState === WebSocket.OPEN) {
+                        socket.send(JSON.stringify({
+                            message_type: 'input_audio_chunk',
+                            audio_base_64: '',
+                            commit: true
+                        }));
+                    }
+                    audioContext.close();
+                }
+
+                workletNode.port.onmessage = (e) => {
+                    if (!isListening || autoStopping) return;
+
                     const inputData = e.data.pcm;
-                    // Convert Float32 to 16-bit PCM
+                    const rms = computeRMS(inputData);
+
+                    // ── VOICE ACTIVITY DETECTION ──────────────────────────────
+                    if (rms > VAD_SILENCE_THRESHOLD) {
+                        // Active speech detected
+                        if (!hasSpeechStarted) {
+                            hasSpeechStarted = true;
+                            speechStartTime = Date.now();
+                            console.log('VAD: speech started');
+                            showSpeechBubble('Listening... 🎙️', 'thinking', 0);
+                        }
+
+                        // Voice is active → clear any pending silence timer
+                        if (silenceTimer) {
+                            clearTimeout(silenceTimer);
+                            silenceTimer = null;
+                        }
+
+                        // Visual: mic pulses red while speaking
+                        if (micBtn) {
+                            micBtn.style.background = '#ff4444';
+                            micBtn.style.transform = 'scale(1.1)';
+                        }
+
+                    } else if (hasSpeechStarted) {
+                        // We've had speech before, now it's quiet
+                        const speechDuration = Date.now() - speechStartTime;
+
+                        // Visual: mic dims to indicate silence
+                        if (micBtn) {
+                            micBtn.style.background = '#ffcccc';
+                            micBtn.style.transform = 'scale(1)';
+                        }
+
+                        // Only start silence timer after minimum speech duration
+                        if (speechDuration >= VAD_MIN_SPEECH_MS && !silenceTimer) {
+                            silenceTimer = setTimeout(() => {
+                                triggerAutoStop();
+                            }, VAD_SILENCE_DURATION);
+                        }
+                    }
+                    // ─────────────────────────────────────────────────────────
+
+                    // Convert Float32 to 16-bit PCM and send to ElevenLabs
                     const buffer = new Int16Array(inputData.length);
                     for (let i = 0; i < inputData.length; i++) {
                         buffer[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
                     }
 
-                    // Convert Int16Array to Base64 using Node's Buffer (safe in Electron)
                     const base64Audio = Buffer.from(buffer.buffer).toString('base64');
 
                     if (socket.readyState === WebSocket.OPEN) {
@@ -241,7 +314,7 @@ async function initSpeechRecognition() {
 
                 // Handle text updates
                 if (data.message_type === 'partial_transcript') {
-                    showSpeechBubble(`Listening: "${data.text}"`, 'normal');
+                    if (data.text) showSpeechBubble(`"${data.text}..."`, 'normal', 0);
                 } else if (data.message_type === 'committed_transcript') {
                     const transcript = data.text;
                     console.log('ElevenLabs Result:', transcript);
@@ -288,14 +361,16 @@ async function initSpeechRecognition() {
             if (isListening) {
                 isListening = false;
                 micBtn.style.background = 'white';
+                micBtn.style.transform = 'scale(1)';
             } else {
                 if (!CONFIG.ELEVENLABS_API_KEY) {
                     showSpeechBubble("Need ElevenLabs API Key! 🔑", 'thinking', 4000);
                     return;
                 }
                 isListening = true;
-                micBtn.style.background = '#ffcccc'; // light red
-                showSpeechBubble("Listening...", 'thinking', 0);
+                micBtn.style.background = '#ffcccc'; // light red — waiting for speech
+                micBtn.style.transform = 'scale(1)';
+                showSpeechBubble("Say something... 🎙️", 'thinking', 0);
                 startScribing();
             }
         });
