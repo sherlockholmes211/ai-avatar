@@ -59,25 +59,18 @@ function initAvatar() {
 
     // Show welcome message after a short delay
     setTimeout(() => {
-        showSpeechBubble("Hi! I'm your AI buddy! 🌟\nClick me to interact!", 'excited');
-    }, 1000);
+        showSpeechBubble("Upload your pixel art, then just talk! 🎨🎙️", 'excited');
+    }, 1500);
 }
 
-// Update speech bubble position
+// Update speech bubble + avatar position
 function updateAvatarPosition() {
-    // Force avatar to top right
-    state.x = window.innerWidth - 120;
-    state.y = 120;
+    state.x = window.innerWidth - 140;
+    state.y = 170;
 
-    if (isoChar) {
-        isoChar.container.x = state.x;
-        isoChar.container.y = state.y;
-    }
-
-    // Update interaction container position
-    if (interactionContainer) {
-        interactionContainer.style.left = `${state.x - 40}px`;
-        interactionContainer.style.top = `${state.y - 60}px`;
+    // PixelAvatar manages its own position internally
+    if (isoChar && isoChar.updatePosition) {
+        isoChar.updatePosition();
     }
 
     // Update speech bubble position
@@ -422,9 +415,10 @@ async function queryOllama(prompt) {
         const data = await response.json();
         const llmReply = data.response;
 
-        // Future proofing: Check for gestures in LLM output if needed, but for now just peak
+        // Detect emote from LLM response and play it
         if (isoChar) {
-            isoChar.setGesture('speak'); // Placeholder
+            const emote = detectEmote(llmReply);
+            isoChar.setEmote(emote, 3000);
         }
 
         showSpeechBubble(llmReply, 'excited', 10000);
@@ -486,24 +480,33 @@ async function playTTSReply(text) {
 // Uses window.PIXI from CDN
 
 
-// Initialize Isometric Character
+// Initialize Pixel Avatar
 let isoChar;
 
 async function setupIsometric() {
     try {
-        console.log('Setting up Isometric Character...');
-        isoChar = new IsometricCharacter(app);
-        console.log('Isometric Character ready:', isoChar);
+        console.log('Setting up Pixel Avatar...');
+        isoChar = new PixelAvatar(app);
+        console.log('Pixel Avatar ready:', isoChar);
     } catch (err) {
-        console.error('Failed to setup isometric character:', err);
-        // Create a visual indicator of error
+        console.error('Failed to setup Pixel Avatar:', err);
         const errDiv = document.createElement('div');
         errDiv.style.color = 'red';
         errDiv.style.position = 'fixed';
         errDiv.style.bottom = '10px';
-        errDiv.innerText = 'Pixi Error: ' + err.message;
+        errDiv.innerText = 'Avatar Error: ' + err.message;
         document.body.appendChild(errDiv);
     }
+}
+
+// Detect emote from LLM reply text
+function detectEmote(text) {
+    const t = text.toLowerCase();
+    if (/\b(haha|lol|amazing|awesome|wow|yay|congrats|love|happy|great|fantastic|:-?\)|😄|🎉|🥳)/.test(t)) return 'excited';
+    if (/\b(think|hmm|maybe|wonder|consider|ponder|let me|well\b|interesting|🤔|hmm)/.test(t)) return 'thinking';
+    if (/\b(error|fail|sorry|oops|wrong|can't|cannot|unable|broken|😔|😢)/.test(t)) return 'shake';
+    if (/\b(hello|hi |hey |welcome|nice to meet|glad|good morning|good evening)/.test(t)) return 'happy';
+    return 'speaking'; // default when talking
 }
 
 // Initialize PixiJS Application
