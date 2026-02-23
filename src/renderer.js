@@ -1,21 +1,22 @@
 const { ipcRenderer } = require('electron');
 
-// Avatar state
+// --- CONFIGURATION ---
+const CONFIG = {
+    ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY || '', // Please set this env var
+    ENABLE_TTS: false, // Disabled by default as requested
+    VOICE_ID: 'pNInz6obpg8ndclQU7Nc', // Default: George
+    SCRIBE_LANGUAGE: 'en'
+};
+
 const state = {
-    x: window.innerWidth / 2,
-    y: window.innerHeight / 2,
-    targetX: window.innerWidth / 2,
-    targetY: window.innerHeight / 2,
-    isMoving: false,
-    isDragging: false,
-    emotion: 'idle',
-    speed: 3,
-    direction: 'right'
+    x: window.innerWidth - 120,
+    y: 120,
+    emotion: 'idle'
 };
 
 // DOM Elements
-const avatarContainer = document.getElementById('avatar-container');
-const avatar = document.getElementById('avatar');
+const gameContainer = document.getElementById('game-container');
+const interactionContainer = document.getElementById('interaction-container');
 const speechBubble = document.getElementById('speech-bubble');
 const bubbleText = document.getElementById('bubble-text');
 
@@ -34,11 +35,11 @@ function enableClickThrough() {
 }
 
 // Track mouse over interactive elements
-avatarContainer.addEventListener('mouseenter', () => {
+interactionContainer.addEventListener('mouseenter', () => {
     enableClickCapture();
 });
 
-avatarContainer.addEventListener('mouseleave', () => {
+interactionContainer.addEventListener('mouseleave', () => {
     if (!state.isDragging) {
         enableClickThrough();
     }
@@ -54,9 +55,7 @@ speechBubble.addEventListener('mouseleave', () => {
 
 // Initialize avatar position
 function initAvatar() {
-    avatarContainer.style.left = `${state.x}px`;
-    avatarContainer.style.top = `${state.y}px`;
-    avatar.classList.add('idle');
+    updateAvatarPosition(); // Set initial position
 
     // Show welcome message after a short delay
     setTimeout(() => {
@@ -64,97 +63,28 @@ function initAvatar() {
     }, 1000);
 }
 
-// Update avatar position and frame
+// Update speech bubble position
 function updateAvatarPosition() {
-    avatarContainer.style.left = `${state.x}px`;
-    avatarContainer.style.top = `${state.y}px`;
+    // Force avatar to top right
+    state.x = window.innerWidth - 120;
+    state.y = 120;
 
-    // Map state to sprite sheet frames (3x2 grid)
-    // Row 0 (frameY = 0): [0:Standing/Walk, 1:Idle Sit, 2:Tea Sit]
-    // Row 1 (frameY = 1): [0:Read+Cat, 1:Tea+Cat, 2:Read]
-    let frameX = 0, frameY = 0;
-
-    if (state.isDragging || state.emotion === 'excited') {
-        frameX = 0; frameY = 0; // Standing for action
-    } else if (state.isMoving) {
-        frameX = 0; frameY = 0; // Walking pose
-    } else {
-        // Use the randomly selected idle frame
-        // idleIndex 0-4 (mapping to the 5 sitting/reading poses)
-        const idleIndex = state.idleIndex || 0;
-        const frames = [
-            { x: 1, y: 0 }, // Idle Sit
-            { x: 2, y: 0 }, // Tea Sit
-            { x: 0, y: 1 }, // Read + Cat
-            { x: 1, y: 1 }, // Tea + Cat
-            { x: 2, y: 1 }  // Read
-        ];
-        frameX = frames[idleIndex].x;
-        frameY = frames[idleIndex].y;
+    if (isoChar) {
+        isoChar.container.x = state.x;
+        isoChar.container.y = state.y;
     }
 
-    avatar.style.setProperty('--frame-x', frameX);
-    avatar.style.setProperty('--frame-y', frameY);
-
-    // Flip avatar based on direction (only for walking/standing)
-    if (state.isMoving || state.isDragging) {
-        avatar.style.transform = state.direction === 'left' ? 'scaleX(-1)' : 'scaleX(1)';
-    } else {
-        avatar.style.transform = 'scaleX(1)'; // Always face right when sitting/reading
+    // Update interaction container position
+    if (interactionContainer) {
+        interactionContainer.style.left = `${state.x - 40}px`;
+        interactionContainer.style.top = `${state.y - 60}px`;
     }
 
     // Update speech bubble position
     updateSpeechBubblePosition();
 }
 
-// // Move avatar towards target
-function moveTowardsTarget() {
-    if (state.isDragging) return;
-
-    const dx = state.targetX - state.x;
-    const dy = state.targetY - state.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-
-    if (distance > 5) {
-        state.isMoving = true;
-        avatar.classList.remove('idle');
-        avatar.classList.add('walking');
-
-        // Normalize and apply speed
-        const vx = (dx / distance) * state.speed;
-        const vy = (dy / distance) * state.speed;
-
-        state.x += vx;
-        state.y += vy;
-
-        // Flip avatar based on direction
-        if (vx > 0 && state.direction !== 'right') {
-            state.direction = 'right';
-            avatar.style.transform = 'scaleX(1)';
-        } else if (vx < 0 && state.direction !== 'left') {
-            state.direction = 'left';
-            avatar.style.transform = 'scaleX(-1)';
-        }
-
-        updateAvatarPosition();
-    } else {
-        if (state.isMoving) {
-            state.isMoving = false;
-            avatar.classList.remove('walking');
-            avatar.classList.add('idle');
-
-            // Random message when arriving
-            const messages = [
-                "I made it! ✨",
-                "Here I am! 😊",
-                "What's up? 💫",
-                "Did you call me? 🌸"
-            ];
-            const randomMessage = messages[Math.floor(Math.random() * messages.length)];
-            showSpeechBubble(randomMessage, 'normal');
-        }
-    }
-}
+// // Move avatar towards target (Removed)
 
 // Show speech bubble
 function showSpeechBubble(text, mood = 'normal', duration = 4000) {
@@ -200,11 +130,11 @@ function typewriterEffect(text) {
 // Update speech bubble position relative to avatar
 function updateSpeechBubblePosition() {
     const bubbleWidth = speechBubble.offsetWidth || 200;
-    const avatarWidth = avatarContainer.offsetWidth || 120;
+    const avatarWidth = 80; // Approximate width of isometric character
 
     // Position above and centered on avatar
-    let bubbleX = state.x + (avatarWidth / 2) - (bubbleWidth / 2);
-    let bubbleY = state.y - speechBubble.offsetHeight - 20;
+    let bubbleX = state.x - (bubbleWidth / 2);
+    let bubbleY = state.y - speechBubble.offsetHeight - 60; // Offset more for the taller iso char
 
     // Keep within screen bounds
     bubbleX = Math.max(10, Math.min(window.innerWidth - bubbleWidth - 10, bubbleX));
@@ -214,160 +144,267 @@ function updateSpeechBubblePosition() {
     speechBubble.style.top = `${bubbleY}px`;
 }
 
-// Drag functionality
-let dragOffsetX = 0;
-let dragOffsetY = 0;
+// ==========================================
+// SPEECH & OLLAMA INTEGRATION
+// ==========================================
 
-avatarContainer.addEventListener('mousedown', (e) => {
-    state.isDragging = true;
-    dragOffsetX = e.clientX - state.x;
-    dragOffsetY = e.clientY - state.y;
+const micBtn = document.getElementById('mic-btn');
+let recognition = null;
+let isListening = false;
 
-    avatar.classList.remove('idle', 'walking');
-    avatar.classList.add('excited');
+// Initialize Speech Recognition (ElevenLabs Scribe)
+async function initSpeechRecognition() {
+    let scribeStream = null;
 
-    // Enable mouse events during drag
-    enableClickCapture();
-});
+    async function startScribing() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-document.addEventListener('mousemove', (e) => {
-    if (state.isDragging) {
-        state.x = e.clientX - dragOffsetX;
-        state.y = e.clientY - dragOffsetY;
-        state.targetX = state.x;
-        state.targetY = state.y;
+            // ElevenLabs Scribe Streaming logic (Using the official realtime endpoint)
+            const socket = new WebSocket(`wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime`);
 
-        // Keep within bounds
-        state.x = Math.max(0, Math.min(window.innerWidth - 200, state.x));
-        state.y = Math.max(0, Math.min(window.innerHeight - 200, state.y));
+            socket.onopen = () => {
+                console.log('ElevenLabs: Scribe WebSocket connected');
 
-        updateAvatarPosition();
-    }
-});
+                // Audio processing
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                const source = audioContext.createMediaStreamSource(stream);
+                const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-document.addEventListener('mouseup', () => {
-    if (state.isDragging) {
-        state.isDragging = false;
-        avatar.classList.remove('excited');
-        avatar.classList.add('idle');
+                source.connect(processor);
+                processor.connect(audioContext.destination);
 
-        // Randomly pick an idle sitting pose after drag
-        state.idleIndex = Math.floor(Math.random() * 5);
+                processor.onaudioprocess = (e) => {
+                    if (!isListening) {
+                        socket.close();
+                        audioContext.close();
+                        return;
+                    }
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    // Convert to 16bit PCM
+                    const buffer = new Int16Array(inputData.length);
+                    for (let i = 0; i < inputData.length; i++) {
+                        buffer[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+                    }
 
-        showSpeechBubble("Wheee! That was fun! 🎉", 'excited');
-        createParticle(state.x + 100, state.y + 50, '💫');
-        createParticle(state.x + 120, state.y + 70, '⭐');
-        createParticle(state.x + 80, state.y + 60, '✨');
+                    // Send raw binary PCM data directly (as expected by ElevenLabs Scribe v2)
+                    socket.send(buffer.buffer);
+                };
+            };
 
-        // Re-enable click-through after drag ends
-        enableClickThrough();
-        updateAvatarPosition();
-    }
-});
+            socket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'transcript' && data.is_final) {
+                    const transcript = data.text;
+                    console.log('ElevenLabs Result:', transcript);
+                    showSpeechBubble(`You: "${transcript}"`, 'normal', 2500);
 
-// Create particle effect
-function createParticle(x, y, emoji) {
-    const particle = document.createElement('div');
-    particle.className = 'particle';
-    particle.textContent = emoji;
-    particle.style.left = `${x}px`;
-    particle.style.top = `${y}px`;
-    document.body.appendChild(particle);
+                    isListening = false;
+                    if (micBtn) micBtn.style.background = 'white';
 
-    setTimeout(() => particle.remove(), 1000);
-}
+                    setTimeout(() => {
+                        queryOllama(transcript);
+                    }, 2500);
 
-// Random idle behaviors
-function randomIdleBehavior() {
-    if (state.isMoving || state.isDragging) return;
+                    socket.close();
+                }
+            };
 
-    const behaviors = [
-        () => {
-            // Look around
-            const thoughts = [
-                "Hmm... 🤔",
-                "What should I do? 💭",
-                "I wonder... ✨",
-                "Nice day! 🌈"
-            ];
-            showSpeechBubble(thoughts[Math.floor(Math.random() * thoughts.length)], 'thinking', 3000);
-        },
-        () => {
-            // Small random move
-            const offsetX = (Math.random() - 0.5) * 100;
-            const offsetY = (Math.random() - 0.5) * 100;
-            state.targetX = Math.max(0, Math.min(window.innerWidth - 200, state.x + offsetX));
-            state.targetY = Math.max(0, Math.min(window.innerHeight - 200, state.y + offsetY));
-        },
-        () => {
-            // Just sparkle
-            createParticle(state.x + 100, state.y + 100, '✨');
-        },
-        () => {
-            // Switch sitting/reading pose
-            state.idleIndex = Math.floor(Math.random() * 5);
-            updateAvatarPosition();
+            socket.onerror = (err) => {
+                console.error('ElevenLabs STT Error:', err);
+                showSpeechBubble("Speech error! 🎙️", 'thinking', 3000);
+                isListening = false;
+                if (micBtn) micBtn.style.background = 'white';
+            };
+
+        } catch (err) {
+            console.error('Failed to start ElevenLabs Scribe:', err);
+            showSpeechBubble("Mic error. Check permissions! 🎙️", 'thinking', 3000);
+            isListening = false;
+            if (micBtn) micBtn.style.background = 'white';
         }
-    ];
-
-    const randomBehavior = behaviors[Math.floor(Math.random() * behaviors.length)];
-    randomBehavior();
-}
-
-// Double-click for special interaction
-avatarContainer.addEventListener('dblclick', () => {
-    avatar.classList.remove('idle', 'walking');
-    avatar.classList.add('excited');
-
-    const greetings = [
-        "You double-clicked me! 🎊",
-        "Happy to see you! 💕",
-        "Let's be friends! 🤝",
-        "I love hanging out here! 🌟"
-    ];
-
-    showSpeechBubble(greetings[Math.floor(Math.random() * greetings.length)], 'excited', 4000);
-
-    // Party particles
-    for (let i = 0; i < 5; i++) {
-        setTimeout(() => {
-            const emojis = ['💖', '⭐', '🌟', '✨', '💫', '☕', '📖', '🐱'];
-            createParticle(
-                state.x + 100 + (Math.random() - 0.5) * 80,
-                state.y + 80 + (Math.random() - 0.5) * 60,
-                emojis[Math.floor(Math.random() * emojis.length)]
-            );
-        }, i * 100);
     }
 
-    setTimeout(() => {
-        avatar.classList.remove('excited');
-        avatar.classList.add('idle');
-    }, 2000);
-});
+    // Attach click listener
+    if (micBtn) {
+        micBtn.style.display = 'flex'; // show button
+        micBtn.addEventListener('click', () => {
+            if (isListening) {
+                isListening = false;
+                micBtn.style.background = 'white';
+            } else {
+                if (!CONFIG.ELEVENLABS_API_KEY) {
+                    showSpeechBubble("Need ElevenLabs API Key! 🔑", 'thinking', 4000);
+                    return;
+                }
+                isListening = true;
+                micBtn.style.background = '#ffcccc'; // light red
+                showSpeechBubble("Listening...", 'thinking', 0);
+                startScribing();
+            }
+        });
+    }
+}
+
+// Query Local Ollama Instance
+async function queryOllama(prompt) {
+    showSpeechBubble("Thinking... 🤔", 'thinking', 0); // Keep thinking bubble open
+    try {
+        const response = await fetch('http://127.0.0.1:11434/api/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'llama3:8b',
+                prompt: `You are an AI avatar assistant. Be extremely concise and playful. Reply to: "${prompt}"`,
+                stream: false
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const llmReply = data.response;
+
+        // Future proofing: Check for gestures in LLM output if needed, but for now just peak
+        if (isoChar) {
+            isoChar.setGesture('speak'); // Placeholder
+        }
+
+        showSpeechBubble(llmReply, 'excited', 10000);
+
+        // ElevenLabs TTS (Guarded by flag)
+        if (CONFIG.ENABLE_TTS) {
+            playTTSReply(llmReply);
+        }
+
+    } catch (error) {
+        console.error('Ollama Query Failed:', error);
+        showSpeechBubble("Could not connect to my brain (Ollama). Is it running? 🧠🔌", 'thinking', 5000);
+    }
+}
+
+// Play TTS using ElevenLabs
+async function playTTSReply(text) {
+    if (!CONFIG.ELEVENLABS_API_KEY) return;
+
+    try {
+        console.log('Playing ElevenLabs TTS...');
+        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${CONFIG.VOICE_ID}`, {
+            method: 'POST',
+            headers: {
+                'xi-api-key': CONFIG.ELEVENLABS_API_KEY,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                text: text,
+                model_id: 'eleven_monolingual_v1',
+                voice_settings: {
+                    stability: 0.5,
+                    similarity_boost: 0.5
+                }
+            })
+        });
+
+        if (!response.ok) throw new Error('TTS API request failed');
+
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.play();
+    } catch (err) {
+        console.error('TTS Error:', err);
+    }
+}
+
+
+
+// Uses window.PIXI from CDN
+
+
+// Initialize Isometric Character
+let isoChar;
+
+async function setupIsometric() {
+    try {
+        console.log('Setting up Isometric Character...');
+        isoChar = new IsometricCharacter(app);
+        console.log('Isometric Character ready:', isoChar);
+    } catch (err) {
+        console.error('Failed to setup isometric character:', err);
+        // Create a visual indicator of error
+        const errDiv = document.createElement('div');
+        errDiv.style.color = 'red';
+        errDiv.style.position = 'fixed';
+        errDiv.style.bottom = '10px';
+        errDiv.innerText = 'Pixi Error: ' + err.message;
+        document.body.appendChild(errDiv);
+    }
+}
+
+// Initialize PixiJS Application
+const app = new PIXI.Application();
+
+async function initPixi() {
+    try {
+        console.log('--- PixiJS v8 Startup ---');
+        console.log('PIXI Global:', typeof PIXI !== 'undefined' ? PIXI.VERSION : 'undefined');
+
+        await app.init({
+            width: window.innerWidth,
+            height: window.innerHeight,
+            backgroundAlpha: 0, // Fully transparent
+            resizeTo: window,
+            antialias: true,
+            hello: true
+        });
+
+        document.getElementById('game-container').appendChild(app.canvas);
+
+        // Ensure visible
+        if (app.canvas && app.canvas.style) {
+            app.canvas.style.opacity = '1';
+            app.canvas.style.display = 'block';
+            app.canvas.style.border = 'none';
+        }
+
+        // Scale mode in v8
+        try {
+            if (PIXI.TextureSource) {
+                PIXI.TextureSource.defaultOptions.scaleMode = 'nearest';
+            }
+        } catch (scaleErr) { console.warn(scaleErr); }
+
+        // Start setup
+        await setupIsometric();
+
+        // Initialize STT 
+        initSpeechRecognition();
+
+        // Initialize loops
+        initAvatar();
+        gameLoop();
+    } catch (e) {
+        console.error('PixiJS Init Failed:', e);
+        showSpeechBubble("Initialization error! 🛠️", 'thinking');
+    }
+}
+
+initPixi();
+
+
 
 // Animation loop
 function gameLoop() {
-    moveTowardsTarget();
     requestAnimationFrame(gameLoop);
 }
 
-// Start periodic idle behaviors
-setInterval(randomIdleBehavior, 8000);
-
-// Initialize
-initAvatar();
-if (window.applyPreferences) window.applyPreferences();
-gameLoop();
-
 // Handle window resize
 window.addEventListener('resize', () => {
-    // Keep avatar within new bounds
-    state.x = Math.min(state.x, window.innerWidth - 200);
-    state.y = Math.min(state.y, window.innerHeight - 200);
-    state.targetX = state.x;
-    state.targetY = state.y;
     updateAvatarPosition();
 });
 
-console.log('🌟 AI Avatar initialized!');
+console.log('🌟 AI Avatar initialized with Isometric Procedural Animation!');

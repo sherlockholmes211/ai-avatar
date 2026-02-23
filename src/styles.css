@@ -1,11 +1,3 @@
-:root {
-  --avatar-size: 1;
-  --avatar-primary: #FFB7C5;
-  --avatar-secondary: #FF8FAB;
-  --avatar-accent: #FF6B8A;
-  --avatar-shadow: rgba(255, 107, 138, 0.4);
-}
-
 * {
   margin: 0;
   padding: 0;
@@ -33,43 +25,24 @@ body {
 }
 
 #game-container canvas {
-  pointer-events: auto;
+  pointer-events: none;
+  /* Let Pixi object interaction be handled by DOM overlay */
 }
 
-/* Avatar container */
-#avatar-container {
+#interaction-container {
   position: fixed;
-  pointer-events: auto;
-  transform: scale(var(--avatar-size));
-  transform-origin: center center;
-  transition: transform 0.3s ease;
-}
-
-/* Anime Avatar - Sprite Sheet Support */
-.avatar {
-  width: 200px;
-  /* Increased for better detail from the sheet */
-  height: 200px;
-  position: relative;
+  width: 80px;
+  height: 180px;
   cursor: grab;
-  transition: transform 0.1s ease;
-
-  /* Sprite sheet configuration (3x2 grid) */
-  background-image: url('../assets/hoodie_girl_spritesheet-Photoroom.png');
-  background-size: 300% 200%;
-  /* 3 columns, 2 rows */
-  background-position: calc(var(--frame-x, 0) * 50%) calc(var(--frame-y, 0) * 100%);
-  background-repeat: no-repeat;
-
-  --frame-x: 0;
-  --frame-y: 0;
+  z-index: 999;
+  pointer-events: auto;
+  /* background: rgba(255, 0, 0, 0.2); Uncomment for debugging bounds */
 }
 
-
-.avatar:active {
+#interaction-container:active {
   cursor: grabbing;
-  transform: scale(1.1);
 }
+
 
 
 /* Speech bubble */
@@ -189,28 +162,6 @@ body {
   }
 }
 
-/* Idle animation */
-.avatar.idle {
-  animation: float 3s ease-in-out infinite;
-}
-
-/* Walking animation - Changed to a smooth float to match the sitting pose */
-.avatar.walking {
-  animation: float 1.5s ease-in-out infinite;
-  /* Reuse float but faster */
-}
-
-
-/* Sleeping animation */
-.avatar.sleeping {
-  animation: none;
-  transform: rotate(-10deg);
-}
-
-/* Excited animation */
-.avatar.excited {
-  animation: bubbleBounce 0.3s ease-in-out infinite;
-}
 
 /* Particle effects */
 .particle {
